@@ -19,10 +19,15 @@ class DnsValidator:
         # Pending queries: tx_id -> {"domain": domain, "timestamp": timestamp, "responded": bool}
         self.pending_queries: Dict[int, Dict] = {}
 
-    def register_query(self, transaction_id: int, domain: str) -> None:
+    def register_query(
+        self,
+        transaction_id: int,
+        domain: str,
+        timestamp: Optional[float] = None,
+    ) -> None:
         self.pending_queries[transaction_id] = {
             "domain": domain.lower(),
-            "timestamp": time.time(),
+            "timestamp": timestamp if timestamp is not None else time.time(),
             "responded": False
         }
 
