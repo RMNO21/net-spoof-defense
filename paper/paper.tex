@@ -6,6 +6,7 @@
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{booktabs}
 
 \begin{document}
 
@@ -19,29 +20,51 @@ tondroraman83@gmail.com}
 \maketitle
 
 \begin{abstract}
-Local area networks depend on stateless protocols, notably the Address Resolution Protocol (ARP, RFC 826) and unencrypted Domain Name System (DNS, RFC 1035). These protocols remain structurally vulnerable to adversarial spoofing attacks, including ARP cache poisoning, gateway impersonation, and DNS race conditions. We introduce \textbf{NetSpoof-Defense}, an adversarial red-blue framework for analyzing and mitigating spoofing threats. The offensive engine simulates precision packet injection and MITM scenarios, while the defensive engine maintains a stateful dynamic binding table and transaction integrity validator. When statistical anomaly thresholds are exceeded ($S_{\text{ARP}} \ge 0.75$), the system broadcasts corrective Layer-2 frames to restore corrupted victim caches. Micro-benchmarks across 5,000 attack iterations demonstrate sub-5 microsecond detection and healing latencies with throughput exceeding 200,000 packets per second.
+Local area networks depend on stateless protocols, notably the Address Resolution Protocol (ARP, RFC 826) and unencrypted Domain Name System (DNS, RFC 1035). These protocols remain structurally vulnerable to adversarial spoofing attacks, including ARP cache poisoning, gateway impersonation, and DNS fast-response race conditions. We introduce \textbf{NetSpoof-Defense}, an adversarial red-blue framework for analyzing and mitigating spoofing threats. The offensive engine models precision packet injection and man-in-the-middle (MITM) vectors, while the defensive engine pairs a stateful dynamic binding table and transaction integrity validator with a zero-dependency Ethernet II / ARP / DNS wire codec and isolated virtual interface ingestion pipeline. When statistical anomaly thresholds are exceeded ($S_{\text{ARP}} \ge 0.75$), the system broadcasts corrective 42-byte Layer-2 frames to restore corrupted victim caches. Empirical benchmarks under Python 3.14 achieve 100.0\% detection accuracy with 32.01~$\mu$s mean state-machine TTD-plus-healing latency (31,157~packets/s), 30.62~$\mu$s full-duplex kernel \texttt{socketpair} round-trip latency (32,543~frames/s), and 14.97~$\mu$s mean latency on mixed ARP/DNS PCAP streams (63,880~frames/s).
 \end{abstract}
 
 \begin{IEEEkeywords}
-Network Security, ARP Spoofing, DNS Cache Poisoning, State Machine Defense, Packet Crafting, MITM.
+Network Security, ARP Spoofing, DNS Cache Poisoning, State Machine Defense, Packet Crafting, Virtual Network Namespaces, MITM.
 \end{IEEEkeywords}
 
 \section{Introduction}
-Address Resolution Protocol (ARP) and Domain Name System (DNS) queries traditionally lack cryptographic verification on local subnets. An attacker sharing the broadcast domain can forge unsolicited replies, establishing persistent man-in-the-middle positions.
+Address Resolution Protocol (ARP, RFC 826) and Domain Name System (DNS, RFC 1035) exchanges traditionally lack cryptographic authentication on local subnets. An adversary sharing the Layer-2 broadcast domain can inject unsolicited replies, establishing persistent man-in-the-middle positions or winning UDP transaction races before legitimate upstream responses arrive.
 
 \section{Adversarial Threat Model}
-Let $H_G = \langle \text{IP}_G, \text{MAC}_G \rangle$ represent the gateway and $H_V = \langle \text{IP}_V, \text{MAC}_V \rangle$ represent the victim host. The attacker transmits:
+Let $H_G = \langle \text{IP}_G, \text{MAC}_G \rangle$ represent the legitimate gateway and $H_V = \langle \text{IP}_V, \text{MAC}_V \rangle$ represent the victim host. The attacker transmits an unsolicited ARP reply:
 \begin{equation}
 P_{\text{poison}} = \text{ARP}_{\text{reply}}(\text{sip}=\text{IP}_G, \text{smac}=\text{MAC}_A, \text{tip}=\text{IP}_V, \text{tmac}=\text{MAC}_V)
 \end{equation}
-This forces the victim cache to associate the gateway IP with the attacker's MAC address $\text{MAC}_A$.
+This forces the victim cache to associate the gateway IP with the attacker's MAC address $\text{MAC}_A$. For DNS spoofing, the attacker races the upstream resolver on a sniffed 16-bit Transaction ID ($\text{TxID}$) such that $t(R_{\text{forged}}) < t(R_{\text{auth}})$.
 
-\section{State Machine Defense Formulation}
+\section{State Machine Defense \& Wire Ingestion}
 The anomaly score $S_{\text{ARP}}(p) \in [0, 1]$ is computed dynamically:
 \begin{equation}
-S_{\text{ARP}}(p) = \alpha \cdot \mathbb{I}_{\text{gateway}}(p) + \beta \cdot \mathbb{I}_{\text{conflict}}(p) + \gamma \cdot \Psi_{\text{rate}}(p)
+S_{\text{ARP}}(p) = \min\left(1.0,\; \alpha \cdot \mathbb{I}_{\text{gateway}}(p) + \beta \cdot \mathbb{I}_{\text{conflict}}(p) + \gamma \cdot \Psi_{\text{rate}}(p)\right)
 \end{equation}
-Where $\mathbb{I}_{\text{gateway}}$ enforces authoritative bindings, $\mathbb{I}_{\text{conflict}}$ monitors historical binding shifts, and $\Psi_{\text{rate}}$ flags unsolicited gratuitous bursts. Upon detecting $S_{\text{ARP}} \ge \tau$, corrective gratuitous frames restore valid network topology.
+Where $\mathbb{I}_{\text{gateway}}$ enforces authoritative gateway bindings ($\alpha = 0.90$), $\mathbb{I}_{\text{conflict}}$ tracks historical MAC shifts ($\beta = 0.70$), and $\Psi_{\text{rate}}$ penalizes unsolicited gratuitous bursts. Upon detecting $S_{\text{ARP}} \ge \tau$ ($\tau = 0.75$), corrective gratuitous frames are serialized into Ethernet II + RFC 826 wire bytes and emitted onto the active sink.
+
+To avoid disrupting host internet connectivity during live packet tests, \texttt{RawSocketSource} and \texttt{VethNetnsManager} validate every interface against \texttt{/proc/net/route} and \texttt{/sys/class/net/<iface>/device}, rejecting physical NICs and default-route interfaces. In unprivileged environments without \texttt{CAP\_NET\_RAW}, \texttt{VirtualWirePair} provides full-duplex Ethernet frame transport over kernel \texttt{AF\_UNIX} \texttt{SOCK\_DGRAM} socket pairs, while \texttt{PcapFrameSource} replays libpcap traces through the identical decoder.
+
+\section{Empirical Evaluation}
+Table~\ref{tab:eval} summarizes single-thread Python 3.14.4 benchmarks measured with \texttt{time.perf\_counter()}.
+
+\begin{table}[htbp]
+\caption{NetSpoof-Defense Wire Ingestion \& State-Machine Latency}
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Pipeline Mode} & \textbf{Mean ($\mu$s)} & \textbf{P99 ($\mu$s)} & \textbf{Throughput} & \textbf{Det.} \\
+\midrule
+State Machine + Heal & 32.01 & 56.17 & 31,157 pkt/s & 100\% \\
+Raw Eth Decode + Heal & 43.21 & 73.97 & 23,092 frm/s & 100\% \\
+VirtualWirePair IPC & 30.62 & 45.49 & 32,543 frm/s & 100\% \\
+PCAP Mixed ARP+DNS & 14.97 & 40.60 & 63,880 frm/s & 100\% \\
+\bottomrule
+\end{tabular}
+\label{tab:eval}
+\end{center}
+\end{table}
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
