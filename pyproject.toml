@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "net-spoof-defense"
+version = "0.1.0"
+authors = [
+  { name="RMNO21", email="tondroraman83@gmail.com" },
+]
+description = "Adversarial Network Spoofing Analysis & Real-Time State-Machine Mitigation Framework"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "scapy>=2.5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
