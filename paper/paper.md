@@ -92,10 +92,15 @@ Live raw-socket experiments risk corrupting host connectivity if bound to physic
 
 For unprivileged testing without `CAP_NET_RAW`, `VirtualWirePair` uses a kernel-backed `AF_UNIX` `SOCK_DGRAM` `socketpair` to preserve Ethernet frame boundaries between Red and Blue endpoints.
 
+### 3.4 IEEE 802.11 Wireless Management Telemetry & ESP32 Passive Sensor Hook
+To cover rogue Access Point (Evil-Twin) beacons and deauthentication floods without placing the host's primary wireless adapter into monitor mode, `NetSpoof-Defense` introduces a decoupled 802.11 telemetry pipeline (`BeaconMonitor`):
+$$S_{802.11}(f) = \min\left(1.0,\; w_{\text{bssid}} \cdot \mathbb{I}_{\text{bssid}}(f) + w_{\text{rsn}} \cdot \mathbb{I}_{\text{downgrade}}(f) + w_{\text{ch}} \cdot \mathbb{I}_{\text{ch}}(f) + w_{\text{rssi}} \cdot \mathbb{I}_{\Delta\text{RSSI}}(f)\right)$$
+The decoder ingests binary `DLT_IEEE802_11_RADIO` (linktype 127) Radiotap frames as well as `ESP32_WMON` JSON records streamed over USB-UART (`115200` baud) from a strictly passive, non-transmitting ESP32 promiscuous sensor node. For deauthentication and disassociation bursts, a 1.0 s sliding window triggers `T1498.001_80211_DEAUTH_FLOOD` alerts when frame rates exceed the configured threshold.
+
 ---
 
 ## 4. Empirical Evaluation
-All measurements were executed single-threaded under Python 3.14.4 on Linux using `time.perf_counter()` across four evaluation modes:
+All measurements were executed single-threaded under Python 3.14.4 on Linux using `time.perf_counter()` across wired and wireless evaluation modes:
 
 | Benchmark Mode | Iterations | Mean Latency | P99 Latency | Throughput | Detection Rate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -103,10 +108,13 @@ All measurements were executed single-threaded under Python 3.14.4 on Linux usin
 | **Raw Ethernet Decode + ARP Heal** | 5,000 | 43.21 µs | 73.97 µs | 23,092 frame/s (7.76 Mbps) | 100.0% |
 | **VirtualWirePair Kernel IPC Round-Trip** | 2,000 | 30.62 µs | 45.49 µs | 32,543 frame/s (10.93 Mbps) | 100.0% |
 | **Offline PCAP Stream (Mixed ARP + DNS)** | 5,000 | 14.97 µs | 40.60 µs | 63,880 frame/s (29.64 Mbps) | 100.0% (2,500/2,500) |
+| **Radiotap + 802.11 Decode & BeaconMonitor** | 5,000 | 19.26 µs | 30.30 µs | 51,270 frame/s (25.43 Mbps) | 100.0% (5,000/5,000) |
+| **Radiotap PCAP (DLT 127) Mixed Stream** | 5,000 | 2.81 µs (eval) | 6.71 µs | 86,585 frame/s (49.87 Mbps) | 100.0% (2,500/2,500) |
+| **ESP32 UART Telemetry Stream (Simulated)** | 5,000 | 2.67 µs (eval) | 4.98 µs | 121,691 frame/s (201.52 Mbps) | 100.0% (2,500/2,500) |
 
-Standard deviations measured ±25.07 µs for raw Ethernet ARP decode-and-heal, ±7.82 µs for full-duplex `VirtualWirePair` round-trip processing, and ±12.40 µs (median 9.77 µs) for mixed ARP/DNS PCAP replay. Across all 15 unit tests (`pytest -v`), zero decode errors and zero false negatives were observed.
+Standard deviations measured ±25.07 µs for raw Ethernet ARP decode-and-heal, ±7.82 µs for full-duplex `VirtualWirePair` round-trip processing, ±12.40 µs (median 9.77 µs) for mixed ARP/DNS PCAP replay, and ±29.41 µs (median 18.72 µs) for full Radiotap binary decode plus `BeaconMonitor` scoring. Across all 20 unit tests (`pytest -v`), zero decode errors and zero false negatives were observed. Physical ESP32 UART and monitor-mode RF validation remain decoupled pending dedicated external hardware attachment.
 
 ---
 
 ## 5. Conclusion
-NetSpoof-Defense shows that Layer-2 ARP cache poisoning and Layer-7 DNS fast-race spoofing can be decoded from raw wire frames, scored statefully, and actively neutralized in tens of microseconds in user-space Python while isolating host interfaces from unintended injection. Upcoming stages will add ESP32 802.11 rogue-AP telemetry ingestion and full multi-node topology stress benchmarks.
+NetSpoof-Defense shows that Layer-2 ARP cache poisoning, Layer-7 DNS fast-race spoofing, and 802.11 management-frame impersonation can be decoded from wire and microcontroller telemetry, scored statefully, and neutralized in tens of microseconds in user-space Python while isolating host interfaces from unintended injection. Upcoming stages will address multi-node topology stress benchmarks and live external ESP32 RF validation.

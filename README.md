@@ -3,7 +3,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-brightgreen.svg)](https://www.python.org/)
 [![Academic: Paper Ready](https://img.shields.io/badge/Paper-IEEE_Format-orange.svg)](paper/paper.md)
-[![Build Status](https://img.shields.io/badge/Tests-15_Passing-success.svg)](tests/)
+[![Build Status](https://img.shields.io/badge/Tests-20_Passing-success.svg)](tests/)
 
 **NetSpoof-Defense** is an adversarial red-blue framework engineered for Layer-2 and Layer-7 network spoofing analysis, detection, and automated active mitigation. Built upon the principle that robust defense requires rigorous offensive modeling, the platform pairs an adversarial packet-crafting suite with a zero-dependency wire-format codec, isolated virtual interface ingestion (`AF_PACKET` / `ip netns` / `socketpair` / libpcap), a stateful dynamic binding monitor, and an automated cache-healing engine.
 
@@ -34,6 +34,8 @@
             | - VirtualWirePair IPC RTT  : 30.62 µs     |
             | - Raw Eth Decode + Heal    : 43.21 µs     |
             | - Mixed ARP/DNS PCAP Replay: 63,880 fps   |
+            | - Radiotap 802.11 Decode   : 19.26 µs     |
+            | - ESP32 UART Sim Ingestion : 121,691 fps  |
             | - Detection Accuracy       : 100.0%       |
             +-------------------------------------------+
 ```
@@ -72,6 +74,7 @@ pytest -v
 ```bash
 python3 benchmarks/benchmark_detection_latency.py
 python3 benchmarks/benchmark_wire_ingestion.py
+python3 benchmarks/benchmark_wireless_ingestion.py
 ```
 
 ---
@@ -83,12 +86,13 @@ python3 benchmarks/benchmark_wire_ingestion.py
 - [x] DNS Query-Response Integrity Validator (Blue Engine)
 - [x] Active Cache Auto-Healing Dispatcher (Blue Engine)
 - [x] Real-time pcap / virtual-wire / isolated `AF_PACKET` raw socket ingestion & host-interface safety guard
-- [ ] ESP32 Hardware Integration Module (Passive Wi-Fi Sniffer node)
+- [x] IEEE 802.11 Radiotap / `BeaconMonitor` & passive ESP32 UART firmware hook (hardware capture validation pending external ESP32/NIC)
 
 ---
 
 ## 📄 Documentation & Academic Publication
 - Virtual interface and `ip netns` isolation guide: [`docs/virtual_interface_setup.md`](docs/virtual_interface_setup.md)
+- Passive ESP32 802.11 sniffer setup: [`docs/esp32_hardware_setup.md`](docs/esp32_hardware_setup.md)
 - IEEE manuscript: [`paper/paper.md`](paper/paper.md) and [`paper/paper.tex`](paper/paper.tex)
 
 ## 👤 Author

@@ -46,11 +46,13 @@ Where $\mathbb{I}_{\text{gateway}}$ enforces authoritative gateway bindings ($\a
 
 To avoid disrupting host internet connectivity during live packet tests, \texttt{RawSocketSource} and \texttt{VethNetnsManager} validate every interface against \texttt{/proc/net/route} and \texttt{/sys/class/net/<iface>/device}, rejecting physical NICs and default-route interfaces. In unprivileged environments without \texttt{CAP\_NET\_RAW}, \texttt{VirtualWirePair} provides full-duplex Ethernet frame transport over kernel \texttt{AF\_UNIX} \texttt{SOCK\_DGRAM} socket pairs, while \texttt{PcapFrameSource} replays libpcap traces through the identical decoder.
 
+For IEEE 802.11 wireless management defense without altering the host Wi-Fi interface, \texttt{BeaconMonitor} ingests \texttt{DLT\_IEEE802\_11\_RADIO} (127) Radiotap frames and \texttt{ESP32\_WMON} UART telemetry from a passive, non-transmitting ESP32 promiscuous scanner, flagging Evil-Twin BSSID conflicts, RSN security downgrades, channel drift, abrupt RSSI steps, and sliding-window deauthentication floods.
+
 \section{Empirical Evaluation}
 Table~\ref{tab:eval} summarizes single-thread Python 3.14.4 benchmarks measured with \texttt{time.perf\_counter()}.
 
 \begin{table}[htbp]
-\caption{NetSpoof-Defense Wire Ingestion \& State-Machine Latency}
+\caption{NetSpoof-Defense Wire \& Wireless Ingestion Latency}
 \begin{center}
 \begin{tabular}{lcccc}
 \toprule
@@ -60,6 +62,9 @@ State Machine + Heal & 32.01 & 56.17 & 31,157 pkt/s & 100\% \\
 Raw Eth Decode + Heal & 43.21 & 73.97 & 23,092 frm/s & 100\% \\
 VirtualWirePair IPC & 30.62 & 45.49 & 32,543 frm/s & 100\% \\
 PCAP Mixed ARP+DNS & 14.97 & 40.60 & 63,880 frm/s & 100\% \\
+Radiotap + BeaconMon & 19.26 & 30.30 & 51,270 frm/s & 100\% \\
+Radiotap PCAP (DLT 127) & 2.81 & 6.71 & 86,585 frm/s & 100\% \\
+ESP32 UART (Sim) & 2.67 & 4.98 & 121,691 frm/s & 100\% \\
 \bottomrule
 \end{tabular}
 \label{tab:eval}
