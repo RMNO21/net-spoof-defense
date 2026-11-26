@@ -18,13 +18,14 @@ from typing import Iterator, List, Optional, Protocol, runtime_checkable
 from net_spoof_defense.blue_engine.arp_monitor import ArpMonitor
 from net_spoof_defense.blue_engine.dns_validator import DnsValidator
 from net_spoof_defense.blue_engine.mitigation import MitigationEngine
+from net_spoof_defense.blue_engine.wireless_monitor import BeaconMonitor, WirelessFrameSource
 from net_spoof_defense.codec import (
     PcapReader,
     WireDecodeError,
     decode_ethernet_frame,
     encode_arp_frame,
 )
-from net_spoof_defense.models import ArpPacketData, DnsPacketData, SpoofAlert
+from net_spoof_defense.models import ArpPacketData, DnsPacketData, SpoofAlert, WirelessFrameData
 from net_spoof_defense.virtual_net import validate_isolated_interface
 
 ETH_P_ALL = 0x0003
@@ -123,6 +124,9 @@ class IngestionStats:
     arp_frames: int = 0
     dns_queries: int = 0
     dns_responses: int = 0
+    wireless_frames: int = 0
+    beacon_frames: int = 0
+    deauth_frames: int = 0
     ignored_frames: int = 0
     decode_errors: int = 0
     alerts_triggered: int = 0
@@ -159,12 +163,14 @@ class PacketIngestor:
         mitigation_engine: Optional[MitigationEngine] = None,
         sink: Optional[FrameSink] = None,
         healing_broadcast_count: int = 1,
+        beacon_monitor: Optional[BeaconMonitor] = None,
     ):
         self.arp_monitor = arp_monitor
         self.dns_validator = dns_validator
         self.mitigation_engine = mitigation_engine or MitigationEngine()
         self.sink = sink
         self.healing_broadcast_count = healing_broadcast_count
+        self.beacon_monitor = beacon_monitor or BeaconMonitor()
 
     def process_raw_frame(
         self,
@@ -224,6 +230,49 @@ class PacketIngestor:
                 stats.alerts.append(alert)
 
         return alert
+
+    def process_wireless_frame(
+        self,
+        frame: WirelessFrameData,
+        stats: Optional[IngestionStats] = None,
+    ) -> Optional[SpoofAlert]:
+        """Evaluate a normalized IEEE 802.11 management frame through `BeaconMonitor`."""
+        t0 = time.perf_counter()
+        if stats is not None:
+            stats.frames_received += 1
+            stats.wireless_frames += 1
+            if frame.frame_subtype in ("beacon", "probe_resp"):
+                stats.beacon_frames += 1
+            elif frame.frame_subtype in ("deauth", "disassoc"):
+                stats.deauth_frames += 1
+
+        _, alert = self.beacon_monitor.process_frame(frame)
+        if alert is not None:
+            self.mitigation_engine.mitigation_log.append(alert)
+
+        elapsed_us = (time.perf_counter() - t0) * 1_000_000.0
+        if stats is not None:
+            stats.latencies_us.append(elapsed_us)
+            if alert is not None:
+                stats.alerts_triggered += 1
+                stats.alerts.append(alert)
+
+        return alert
+
+    def ingest_wireless_from_source(
+        self,
+        source: WirelessFrameSource,
+        max_frames: Optional[int] = None,
+    ) -> IngestionStats:
+        """Consume 802.11 management telemetry from a Radiotap PCAP or ESP32 UART source."""
+        stats = IngestionStats()
+        while max_frames is None or stats.frames_received < max_frames:
+            frame = source.recv_wireless_frame()
+            if frame is None:
+                break
+            self.process_wireless_frame(frame, stats=stats)
+        stats.decode_errors = getattr(source, "decode_errors", 0)
+        return stats
 
     def ingest_from_source(
         self,

@@ -3,7 +3,7 @@ Configuration schema for NetSpoof-Defense using standard library dataclasses.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Any, Dict
 
 @dataclass
 class NetworkConfig:
@@ -24,8 +24,18 @@ class DnsDefenseConfig:
     flag_duplicate_responses: bool = True
 
 @dataclass
+class WirelessDefenseConfig:
+    rssi_jump_threshold_dbm: int = 18
+    max_deauth_per_sec: float = 5.0
+    anomaly_threshold: float = 0.70
+    serial_baudrate: int = 115200
+    serial_timeout_s: float = 0.05
+
+@dataclass
 class GlobalConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     arp: ArpDefenseConfig = field(default_factory=ArpDefenseConfig)
     dns: DnsDefenseConfig = field(default_factory=DnsDefenseConfig)
+    wireless: WirelessDefenseConfig = field(default_factory=WirelessDefenseConfig)
     trusted_gateways: Dict[str, str] = field(default_factory=dict)
+    trusted_aps: Dict[str, Dict[str, Any]] = field(default_factory=dict)
